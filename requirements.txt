@@ -1,0 +1,8 @@
+# Deezee Server Bot dependencies.
+# Deliberately short: Wispbyte reinstalls these on every restart, so each
+# entry costs boot time. aiohttp is not listed because discord.py pulls it in.
+
+discord.py>=2.4,<3.0
+aiosqlite>=0.20,<0.22
+python-dotenv>=1.0,<2.0
+Pillow>=10.3,<12.0

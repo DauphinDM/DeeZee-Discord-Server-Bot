@@ -1,0 +1,65 @@
+# Offline phishing blocklist -- the fallback when the Safe Browsing API is
+# unavailable or no key is configured.
+#
+# Matched as suffixes, same as trusted_domains.txt. Anything here is treated as
+# a confirmed threat without a lookup.
+#
+# This list covers the patterns that actually reach Discord servers: fake Nitro
+# giveaways, Steam trade scams, and typosquats of discord.com. It is not a
+# replacement for the API -- new phishing domains appear daily and a static file
+# cannot keep up. It exists so that turning the API off degrades the scanner
+# rather than disabling it.
+#
+# Maintenance: add a domain here when a scam gets through. Remove nothing that
+# was ever malicious -- these domains get re-registered.
+
+# --- discord.com typosquats and lookalikes ---------------------------------
+discordapp.info
+discordgift.site
+discordnitro.gift
+discord-gift.com
+discord-gifts.com
+discord-nitro.com
+discord-nitro.info
+discordc.gift
+discorde.gift
+discordgifts.site
+dlscord.com
+dlscordapp.com
+discrod.com
+discorcl.com
+discordd.gg
+disc0rd.com
+discord-airdrop.com
+discordnitro.info
+steamcommunlty.com
+steamcommunity.ru.com
+steamcomminuty.com
+steamcommumity.com
+steampowered.ru.com
+
+# --- Fake Nitro and giveaway lures -----------------------------------------
+nitro-discord.com
+nitrodiscord.gift
+free-nitro.com
+freenitro.gift
+nitro-gift.com
+gift-nitro.com
+discordnitro.shop
+nitrogift.link
+
+# --- Steam trade and item scams --------------------------------------------
+steam-trade.net
+steamtrade.gift
+csgo-skins.gift
+skinsgg.com
+tradeit.link
+
+# --- Token grabbers and generic credential harvesters ----------------------
+discord-token.com
+discordtoken.info
+login-discord.com
+discord-login.com
+discord-verify.com
+discordverify.info
+verify-discord.com

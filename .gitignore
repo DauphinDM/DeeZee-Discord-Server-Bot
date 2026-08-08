@@ -1,0 +1,27 @@
+# Secrets. The token lives here and nowhere else.
+.env
+
+# Persistent volume: the database and anything written at runtime.
+data/*.db
+data/*.db-wal
+data/*.db-shm
+data/fonts/
+
+# Rotating logs.
+logs/
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+.mypy_cache/
+.ruff_cache/
+.pytest_cache/
+
+# Editors
+.vscode/
+.idea/
+*.swp
+.DS_Store
