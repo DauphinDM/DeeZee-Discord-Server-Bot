@@ -1,0 +1,125 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>TikTok authorisation — copy this back to Discord</title>
+<!--
+  The landing page for TIKTOK_REDIRECT_URI.
+
+  TikTok will only redirect to an https:// address, and the bot has no https://
+  address: Wispbyte hands out an IP and a port. So the bot never receives this
+  redirect at all. This page exists purely so the browser has somewhere to land,
+  and so the person authorising can see what to copy.
+
+  It talks to nothing. No script tags from anywhere else, no fetch, no form, no
+  analytics. It reads its own address bar and prints it. Host it anywhere that
+  serves https and lets you prove you own the domain -- GitHub Pages is free and
+  does both.
+
+  The value it displays is a single-use authorisation code. Anyone who obtains
+  it within its short lifetime could exchange it, so the page says so rather
+  than leaving that to be guessed.
+-->
+<style>
+  :root { color-scheme: light dark; }
+  body {
+    margin: 0; padding: 2rem 1.25rem;
+    font: 16px/1.6 system-ui, -apple-system, Segoe UI, Roboto, sans-serif;
+    display: flex; justify-content: center;
+    background: #fafafa; color: #111;
+  }
+  @media (prefers-color-scheme: dark) {
+    body { background: #111; color: #eee; }
+    code, .box { background: #1c1c1c !important; border-color: #333 !important; }
+  }
+  main { max-width: 40rem; width: 100%; }
+  h1 { font-size: 1.35rem; margin: 0 0 .35rem; }
+  p.sub { margin: 0 0 1.5rem; opacity: .7; }
+  .box {
+    background: #fff; border: 1px solid #ddd; border-radius: 8px;
+    padding: 1rem; margin: 0 0 1rem;
+  }
+  code {
+    display: block; background: #f2f2f2; border: 1px solid #e2e2e2;
+    border-radius: 6px; padding: .75rem; word-break: break-all;
+    font: 13px/1.5 ui-monospace, SFMono-Regular, Consolas, monospace;
+  }
+  button {
+    margin-top: .75rem; padding: .55rem 1rem; font-size: .95rem;
+    border: 0; border-radius: 6px; background: #25f4ee; color: #000;
+    cursor: pointer; font-weight: 600;
+  }
+  .warn { font-size: .9rem; opacity: .75; }
+  .bad { color: #c0392b; font-weight: 600; }
+  ol { padding-left: 1.2rem; }
+</style>
+</head>
+<body>
+<main>
+  <h1>Authorisation received</h1>
+  <p class="sub">Copy the line below and paste it back into Discord.</p>
+
+  <div class="box">
+    <code id="value">Reading the address bar…</code>
+    <button id="copy" type="button">Copy</button>
+  </div>
+
+  <div class="box">
+    <ol>
+      <li>Go back to Discord.</li>
+      <li>Press <strong>2. Paste the code</strong> on the message the bot sent you.</li>
+      <li>Paste, and submit.</li>
+    </ol>
+    <p class="warn">
+      That value is a single-use code that can be traded for access to the
+      TikTok account you just authorised. Do not post it in a channel — the box
+      in Discord is a private modal, which is why the bot asks for it there.
+      It expires on its own within minutes.
+    </p>
+  </div>
+</main>
+
+<script>
+  // Everything here is local to this page. Nothing is sent anywhere.
+  (function () {
+    var target = document.getElementById('value');
+    var button = document.getElementById('copy');
+    var params = new URLSearchParams(window.location.search || window.location.hash.replace(/^#/, ''));
+
+    if (params.get('error')) {
+      target.className = 'bad';
+      target.textContent =
+        'TikTok refused the authorisation: ' + params.get('error') +
+        (params.get('error_description') ? ' — ' + params.get('error_description') : '') +
+        '\nGo back to Discord and run ?tiktok connect again.';
+      button.disabled = true;
+      return;
+    }
+
+    if (!params.get('code')) {
+      target.className = 'bad';
+      target.textContent =
+        'No authorisation code in this address. You have probably opened this ' +
+        'page directly rather than being sent here by TikTok.';
+      button.disabled = true;
+      return;
+    }
+
+    // The bot accepts the whole URL and pulls the code and state out of it,
+    // which removes any chance of copying only half of what it needs.
+    var full = window.location.href;
+    target.textContent = full;
+
+    button.addEventListener('click', function () {
+      navigator.clipboard.writeText(full).then(function () {
+        button.textContent = 'Copied';
+      }, function () {
+        // Clipboard access can be denied; selecting the text still works.
+        button.textContent = 'Select it manually';
+      });
+    });
+  })();
+</script>
+</body>
+</html>
