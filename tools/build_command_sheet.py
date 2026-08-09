@@ -1,9 +1,19 @@
 """
-Generate the merged Deezee Server Bot command sheet as an .xlsx workbook.
+Generate the Deezee Server Bot command sheet as an .xlsx workbook.
 
-The sheet merges the public command surfaces of Dyno, Carl-bot, Lawliet,
-Sapphire and Double Counter into one deduplicated command set for a single
-replacement bot using the "?" prefix.
+**The command list is read out of ``cogs/`` at build time, not typed here.**
+This file used to hold all 188 rows by hand. That was the right shape while the
+bot was being designed and the wrong shape the moment it existed: the code moved
+and the sheet did not, so the sheet quietly described a bot that had not been
+true for weeks.
+
+Now ``tools/introspect.py`` parses the cogs with ``ast`` -- no imports, no
+database, no token, safe to run while the bot is live -- and supplies the name,
+aliases, surface, arguments, permission gate and description of every command.
+The hand-written rows survive only as *enrichment*: which of the five original
+bots a command replaces, and the design notes worth keeping. Those are matched
+by command name, and anything in the old list that no longer matches a real
+command is reported on the Coverage sheet instead of silently disappearing.
 
 Run:  python tools/build_command_sheet.py
 Out:  docs/Deezee_Command_Sheet.xlsx
@@ -12,12 +22,17 @@ Out:  docs/Deezee_Command_Sheet.xlsx
 from __future__ import annotations
 
 import os
+import sys
 from typing import List, Tuple
 
 from openpyxl import Workbook
 from openpyxl.styles import Alignment, Border, Font, PatternFill, Side
 from openpyxl.utils import get_column_letter
 from openpyxl.worksheet.worksheet import Worksheet
+
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+
+import introspect  # noqa: E402 - needs the path above
 
 HEADERS = [
     "Command",
@@ -713,10 +728,24 @@ CONFIG: List[Row] = [
      "Highest-value support command; keeps configuration debuggable without a dashboard."),
 ]
 
-ALL_ROWS: List[Row] = (
+#: The original hand-written design spec. No longer the source of truth for
+#: what exists -- it is consulted only for the two columns the code cannot
+#: know: which bots a command replaces, and the design note behind it.
+SPEC_ROWS: List[Row] = (
     MODERATION + AUTOMOD + ANTIRAID + ROLES + LOGGING
     + LEVELING + UTILITY + FUN + GIVEAWAYS + TAGS + CONFIG
 )
+
+#: Spec rows keyed by command, for the enrichment lookup. Some spec entries name
+#: a command that was later renamed or folded into a group; those surface on the
+#: Coverage sheet rather than being dropped.
+SPEC_BY_NAME: dict[str, Row] = {row[0]: row for row in SPEC_ROWS}
+
+#: Spec commands that are deliberately absent from the code, with the reason.
+NOT_BUILT = {
+    "(not built) VPN / proxy / Tor blocking":
+        "Discord never exposes a member's IP to a bot. See the Notes sheet.",
+}
 
 # Colour per category, used to tint the Category cell.
 CATEGORY_FILLS = {
@@ -731,6 +760,7 @@ CATEGORY_FILLS = {
     "Giveaways & Events": "E0F7F4",
     "Tags & Custom Commands": "FFF2CC",
     "Server Config": "D9E1F2",
+    "Owner / Operator": "D6D6D6",
 }
 
 FONT = "Arial"
@@ -754,12 +784,65 @@ def style_header(ws: Worksheet, headers: List[str]) -> None:
     ws.freeze_panes = "A2"
 
 
-def build_commands_sheet(wb: Workbook) -> None:
+def rows_from_code(commands: List[introspect.Command]) -> List[Row]:
+    """Turn parsed commands into sheet rows, enriched from the old spec.
+
+    Seven of the eleven columns come from the source and cannot drift. Two --
+    "Source bot(s)" and "Notes" -- are the spec's, because no amount of reading
+    ``cogs/`` reveals that ``?fancy`` replaces eight separate Carl-bot commands.
+    """
+    rows: List[Row] = []
+    for command in commands:
+        # Match on any spelling, not just the declared name: the spec wrote
+        # ?rr mode for what the code calls ?reactionrole mode.
+        spec = next(
+            (SPEC_BY_NAME[s] for s in sorted(command.spellings) if s in SPEC_BY_NAME),
+            None,
+        )
+
+        if spec is not None:
+            sources, note = spec[7], spec[10]
+        else:
+            sources, note = "Deezee original", ""
+
+        detail = [f"{command.source_file}:{command.lineno}"]
+        if command.is_group:
+            detail.append(
+                f"Group; bare `{command.display}` runs `{command.fallback}`."
+                if command.fallback else "Group."
+            )
+        if command.hybrid and not command.with_app_command:
+            detail.append(
+                "Prefix-only by choice: configuration run once, kept out of the "
+                "100-slash budget. Reachable from ?config."
+            )
+        elif not command.hybrid:
+            detail.append("Prefix-only: never registered as a slash command.")
+
+        note = " ".join(filter(None, [note, "(" + " ".join(detail) + ")"]))
+
+        rows.append((
+            command.display,
+            command.category,
+            ", ".join(command.aliases) if command.aliases else "-",
+            command.surface,
+            command.description or "-",
+            command.arguments,
+            command.permission,
+            sources,
+            "Yes" if command.buttons else "No",
+            "Yes" if command.modal else "No",
+            note,
+        ))
+    return rows
+
+
+def build_commands_sheet(wb: Workbook, rows: List[Row]) -> None:
     ws = wb.active
     ws.title = "Commands"
     style_header(ws, HEADERS)
 
-    for row in ALL_ROWS:
+    for row in rows:
         ws.append(list(row))
 
     for r in range(2, ws.max_row + 1):
@@ -785,13 +868,13 @@ def build_commands_sheet(wb: Workbook) -> None:
     ws.auto_filter.ref = f"A1:{get_column_letter(len(HEADERS))}{ws.max_row}"
 
 
-def build_summary_sheet(wb: Workbook) -> None:
+def build_summary_sheet(wb: Workbook, rows: List[Row]) -> None:
     """Category counts, computed with live formulas against the Commands sheet."""
     ws = wb.create_sheet("Summary")
     style_header(ws, ["Category", "Commands", "Uses buttons", "Uses modals", "Slash + prefix"])
 
     categories = list(CATEGORY_FILLS.keys())
-    last = len(ALL_ROWS) + 1  # last data row on the Commands sheet
+    last = len(rows) + 1  # last data row on the Commands sheet
 
     for i, category in enumerate(categories, start=2):
         ws.cell(row=i, column=1, value=category)
@@ -824,9 +907,15 @@ def build_summary_sheet(wb: Workbook) -> None:
 
 
 NOTES_ROWS = [
+    ("How this sheet is built", "tools/build_command_sheet.py",
+     "The command list is parsed out of cogs/ with Python's ast module at build time -- it is not typed by hand and cannot drift from the code. Name, aliases, surface, arguments, permission gate and description all come from the source. Only 'Source bot(s)' and the leading half of 'Notes' are hand-written, because no amount of reading the code reveals which of the five original bots a command replaces. The Coverage sheet lists any disagreement between the original design spec and what actually exists. Regenerate with: python tools/build_command_sheet.py"),
+    ("Buttons / modals columns", "Heuristic",
+     "Unlike every other generated column, these two are inferred by looking for View(, confirm(, Paginator(, add_item(, send_modal( and Modal( in the function body. A command that builds its UI in a helper will read as No. Treat them as a hint, not a contract."),
     ("Prefix", "?", "Every command is registered as a prefix command. Mentioning the bot also works as a prefix, so a mistyped ?prefix can never lock the server out."),
-    ("Slash coverage", "All commands",
-     "Every command in this sheet is also a slash command. Commands whose arguments are long free text (tag bodies, embed content, ban lists) open a modal from the slash version instead of taking a long option string."),
+    ("Slash coverage", "98 of 100 top-level",
+     "NOT every command is a slash command. Discord caps a guild at 100 top-level application commands and this bot has far more than that, so 98 top-level commands are registered as slash and the rest are prefix-only. Subcommands of a slash group (?tag create, ?import levels) are slash too and do not count against the cap. The split is deliberate: slash goes to commands typed in a hurry or by ordinary members, prefix-only goes to configuration run once, whose discoverability is served by ?config. Commands whose arguments are long free text (tag bodies, embed content, ban lists) open a modal instead of taking a long option string."),
+    ("Slash commands not appearing", "Invite scope + GUILD_IDS",
+     "Two causes, in order of likelihood. (1) The bot was invited without the applications.commands scope: tree.sync() then fails with 403 Missing Access, which core/bot.py logs as a warning and startup continues past. Re-invite with both scopes -- it does not remove the bot or reset anything. (2) The guild is not in GUILD_IDS: startup only syncs to guilds on that list, and ?sync iterates the same list, so running ?sync in an unlisted guild cannot help it. Check the boot log for 'Synced N command(s) to guild <id>' against 'Could not sync commands to guild <id>'."),
     ("Deduplication", "5 bots -> 1",
      "Overlapping commands were collapsed. Example: Dyno ?ban, Carl-bot !ban, Lawliet L.ban and Sapphire s!ban all became a single ?ban; Carl-bot's eight separate text-transform commands became ?fancy <style>."),
     ("No dashboard", "Hard constraint",
@@ -839,8 +928,10 @@ NOTES_ROWS = [
      "Google Safe Browsing v5 urls:search, free and non-commercial-only. Endpoint GET https://safebrowsing.googleapis.com/v5/urls:search?key=<KEY>&urls=<url>, repeat the urls parameter for up to 50 URLs, empty request body. IMPORTANT: v5 responds with application/x-protobuf only; alt=json is rejected with 400 Unsupported Output Format. The response message is tiny and fixed (threats[] of {url, threatTypes[]}, plus cacheDuration), so the bot ships a ~40-line hand-written varint decoder rather than taking a protobuf dependency. An empty threats list means clean. Verified working against this project's key on 2026-08-07. Only unknown links are sent: a bundled trusted-domain database plus a per-guild trusted list are checked first, and verdicts are cached, so the API sees a small fraction of posted links. Set GOOGLE_SAFE_BROWSING_KEY in .env. Without it, the trusted lists and the offline phishing blocklist still work. Do not build against v4: it is deprecated and shuts down 31 March 2027."),
     ("EXTERNAL API - fun content", "?cat ?dog ?urban",
      "TheCatAPI, dog.ceo and Urban Dictionary. All free and keyless; each has a graceful failure path."),
-    ("EXTERNAL API - level import", "?importlevels mee6",
-     "The Mee6 leaderboard endpoint is public but unofficial and frequently rate-limited. CSV import is the supported path."),
+    ("EXTERNAL API - level import", "?import levels mee6",
+     "The Mee6 leaderboard endpoint is public but unofficial and frequently rate-limited. CSV import is the supported path: ?import levels csv with a user_id,xp attachment. A header naming the second column 'level' instead converts each level through this bot's curve, which is what you want when migrating off a bot with a different XP formula."),
+    ("NOT BUILT - TikTok / social notifications", "Sapphire feature",
+     "Built once and removed on request. TikTok publishes no endpoint for reading an arbitrary creator's posts: the Display API reads the post list of whoever granted the token, so the creator has to click an authorisation link, and following a stranger is impossible without scraping. Sapphire manages it by running a paid backend that scrapes on your behalf. Nothing in the code refers to it any more."),
     ("NOT BUILT - IP / VPN / proxy detection", "Double Counter core feature",
      "Discord does not expose member IP addresses to bots. Double Counter obtains them by redirecting every joining member to its own hosted web page and fingerprinting the browser. Reproducing that means hosting a public website, which the no-dashboard constraint rules out. ?altcheck implements the strongest heuristics available without IP data."),
     ("NOT BUILT - music", "Sapphire beta feature",
@@ -878,17 +969,95 @@ def build_notes_sheet(wb: Workbook) -> None:
         ws.column_dimensions[get_column_letter(i)].width = width
 
 
+def build_coverage_sheet(wb: Workbook, commands: List[introspect.Command]) -> None:
+    """Where the original design spec and the running code disagree.
+
+    Two directions, and both matter. A spec row with no command is something
+    promised and not delivered -- or renamed without the sheet being told. A
+    command with no spec row is something built after the spec was written, and
+    is exactly what made the old sheet untrustworthy.
+    """
+    ws = wb.create_sheet("Coverage")
+    style_header(ws, ["Status", "Item", "Detail"])
+
+    live: set[str] = set()
+    for command in commands:
+        live.update(command.spellings)
+    matched = {s for c in commands for s in c.spellings if s in SPEC_BY_NAME}
+    rows: List[Tuple[str, str, str]] = []
+
+    for name, reason in sorted(NOT_BUILT.items()):
+        rows.append(("NOT BUILT", name, reason))
+
+    for spec in SPEC_ROWS:
+        name = spec[0]
+        if name in NOT_BUILT or name in live:
+            continue
+        rows.append((
+            "SPEC ROW WITH NO COMMAND", name,
+            f"Listed in the original spec under {spec[1]}, but nothing answers "
+            "to that name or any alias of it. Renamed or dropped.",
+        ))
+
+    for command in commands:
+        if command.spellings & matched:
+            continue
+        rows.append((
+            "BUILT AFTER THE SPEC", command.display,
+            f"{command.category} — {command.description or 'no description'} "
+            f"({command.source_file}:{command.lineno})",
+        ))
+
+    for row in rows:
+        ws.append(list(row))
+
+    for r in range(2, ws.max_row + 1):
+        status = str(ws.cell(row=r, column=1).value)
+        for c in range(1, 4):
+            cell = ws.cell(row=r, column=c)
+            cell.font = Font(
+                name=FONT, size=10, bold=(c == 1),
+                color="C00000" if status != "BUILT AFTER THE SPEC" else "1F4E79",
+            )
+            cell.alignment = Alignment(vertical="top", wrap_text=True)
+            cell.border = BORDER
+
+    for i, width in enumerate([30, 32, 96], start=1):
+        ws.column_dimensions[get_column_letter(i)].width = width
+
+    ws.auto_filter.ref = f"A1:C{ws.max_row}"
+    return None
+
+
 def main() -> None:
+    root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    commands = introspect.collect(__import__("pathlib").Path(root))
+    rows = rows_from_code(commands)
+    counts = introspect.summarise(commands)
+
     wb = Workbook()
-    build_commands_sheet(wb)
-    build_summary_sheet(wb)
+    build_commands_sheet(wb, rows)
+    build_summary_sheet(wb, rows)
+    build_coverage_sheet(wb, commands)
     build_notes_sheet(wb)
 
-    out_dir = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "docs")
+    out_dir = os.path.join(root, "docs")
     os.makedirs(out_dir, exist_ok=True)
     out_path = os.path.join(out_dir, "Deezee_Command_Sheet.xlsx")
     wb.save(out_path)
-    print(f"Wrote {out_path} with {len(ALL_ROWS)} commands.")
+
+    print(f"Wrote {out_path}")
+    print(f"  {counts['total']} commands ({counts['groups']} groups)")
+    print(f"  {counts['both']} slash + prefix, {counts['prefix_only']} prefix-only")
+    print(f"  {counts['top_level_slash']} top-level slash commands of Discord's 100 cap")
+    live = {s for c in commands for s in c.spellings}
+    matched = {s for s in live if s in SPEC_BY_NAME}
+    unspecced = sum(1 for c in commands if not (c.spellings & matched))
+    orphaned = sum(
+        1 for row in SPEC_ROWS if row[0] not in live and row[0] not in NOT_BUILT
+    )
+    print(f"  Coverage: {unspecced} built after the spec, "
+          f"{orphaned} spec row(s) with no matching command")
 
 
 if __name__ == "__main__":

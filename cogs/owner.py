@@ -61,6 +61,74 @@ class Owner(commands.Cog):
             description=f"{EMOJI_SUCCESS}  {description}", colour=COLOUR_SUCCESS
         )
 
+    async def _describe(self, user_id: int, guild: discord.Guild | None) -> str:
+        """One line for one owner: who they are, and whether they are here.
+
+        Falls back to the bare ID rather than dropping the entry. An owner the
+        bot cannot resolve -- a deleted account, an API hiccup -- still holds
+        that authority, and a list that quietly omits them is worse than one
+        that says it could not look them up.
+        """
+        user = self.bot.get_user(user_id)
+        if user is None:
+            try:
+                user = await self.bot.fetch_user(user_id)
+            except discord.HTTPException:
+                return f"`{user_id}` — *could not look this account up*"
+
+        here = ""
+        if guild is not None:
+            here = "" if guild.get_member(user_id) else "  *(not in this server)*"
+        return f"{user.mention} — {user} (`{user_id}`){here}"
+
+    @commands.command(name="owners", aliases=["botowners"])
+    @permissions.admin_only()
+    async def owners(self, ctx: commands.Context) -> None:
+        """Show who owns this bot, in both tiers.
+
+        Admin-gated rather than public. Knowing who to impersonate is the first
+        step of most social engineering, and a moderator knowing is enough.
+        """
+        root_ids = sorted(self.bot.config.root_owner_ids)
+        owner_ids = sorted(self.bot.config.owner_ids)
+
+        embed = discord.Embed(
+            title="Bot owners",
+            description=(
+                "Two tiers. **Root** is absolute: nothing at runtime can demote, "
+                "blacklist, ignore, deny or moderate a root owner — not another "
+                "owner, not the server owner, not an Administrator. Attempts are "
+                "refused and recorded in `permission_audit`."
+            ),
+            colour=COLOUR_INFO,
+        )
+
+        for label, ids, note in (
+            ("Root", root_ids, "absolute authority"),
+            ("Owner", owner_ids, "full bot power, but cannot touch a root owner "
+                                 "or edit either list"),
+        ):
+            lines = [await self._describe(user_id, ctx.guild) for user_id in ids]
+            embed.add_field(
+                name=f"{label} — {note}",
+                value="\n".join(lines) if lines else "*none configured*",
+                inline=False,
+            )
+
+        yours = []
+        if ctx.author.id in root_ids:
+            yours.append("a **root owner**")
+        elif ctx.author.id in owner_ids:
+            yours.append("a **bot owner**")
+        if yours:
+            embed.add_field(name="You", value=f"You are {yours[0]}.", inline=False)
+
+        embed.set_footer(
+            text="Neither list can be changed from inside Discord. "
+            "Editing .env and restarting is the only way."
+        )
+        await ctx.send(embed=embed, allowed_mentions=discord.AllowedMentions.none())
+
     @commands.command(name="reload")
     @permissions.owner_only()
     async def reload(self, ctx: commands.Context, extension: str = "all") -> None:
