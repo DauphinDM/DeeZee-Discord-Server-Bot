@@ -6,6 +6,7 @@ data/*.db
 data/*.db-wal
 data/*.db-shm
 data/fonts/
+data/backups/
 
 # Rotating logs.
 logs/

@@ -172,6 +172,49 @@ being specific about which:
 
 ---
 
+## Resetting
+
+`?configreset` inside Discord resets **settings only** — the columns of
+`guild_config`, one module at a time or all of them. Levels, economy, warnings,
+cases, tags and giveaways all survive it, which is usually what you want.
+
+To wipe actual data, stop the bot and use `tools/reset.py`:
+
+```bash
+python tools/reset.py --list
+```
+
+```bash
+python tools/reset.py --guild 1464027421236920392
+```
+
+```bash
+python tools/reset.py --all
+```
+
+`--list` changes nothing and shows what is in there. `--guild` deletes one
+server's rows and leaves any other server alone. `--all` deletes the database
+outright; the schema comes back on the next boot because migrations run at
+startup.
+
+Both destructive modes back up to `data/backups/` first (git-ignored), ask you
+to type a confirmation word, and **refuse to run while the bot is up** — they
+take SQLite's write lock to check. Add `--dry-run` to see the row counts without
+touching anything, `--yes` to skip the prompt in a script.
+
+Deleting `data/deezee.db` by hand does mostly work, and the tool exists because
+of the three ways it does not: WAL leaves `deezee.db-wal` and `deezee.db-shm`
+behind holding committed pages, `data/` also contains the domain lists and fonts
+you do not want gone, and a database deleted while the bot is running keeps
+being written to until it restarts — so the reset looks like it worked and then
+undoes itself.
+
+This is deliberately not a Discord command. A bot cannot delete the database it
+is holding open, and the no-dashboard rule is about configuration, not disaster
+recovery.
+
+---
+
 ## Layout
 
 ```
@@ -186,6 +229,7 @@ ui/                 views, paginator, panels/ (the ?config tree)
 migrations/         NNN_name.sql, applied in order, never edited once shipped
 data/               persistent volume: deezee.db, domain lists, fonts
 docs/               DESIGN.md and the command sheet
+tools/              offline scripts: reset.py, build_command_sheet.py
 logs/               rotating, git-ignored
 ```
 
