@@ -707,27 +707,44 @@ class Fun(commands.Cog):
             )
         )
 
-    @commands.command(name="reptop")
+    @commands.hybrid_command(name="reptop", aliases=["replb", "reputationtop"])
+    @commands.cooldown(1, 10, commands.BucketType.guild)
     @permissions.guild_only()
     async def reptop(self, ctx: commands.Context) -> None:
-        """Reputation leaderboard.
+        """Reputation leaderboard, with each member's message count beside it.
 
-        Prefix-only, and not one of the sheet's rows: a leaderboard is the
-        obvious question the moment reputation exists, and it costs one query.
+        Reads the same ``profiles.reputation`` column ``?rep`` writes, so every
+        point given since the feature existed is already counted -- there is
+        nothing to backfill. Message counts come from the leveling table via a
+        LEFT JOIN, because the question a rep leaderboard immediately raises is
+        "who leads on both".
         """
-        rows = await self.bot.db.fetchall(
-            "SELECT user_id, reputation FROM profiles WHERE guild_id = ? "
-            "AND reputation > 0 ORDER BY reputation DESC LIMIT 100",
+        if ctx.interaction is not None and not ctx.interaction.response.is_done():
+            await ctx.defer()
+
+        lines: list[str] = []
+        position = 0
+        async for row in self.bot.db.iterate(
+            "SELECT p.user_id, p.reputation, COALESCE(l.messages, 0) AS messages "
+            "FROM profiles p "
+            "LEFT JOIN levels l ON l.guild_id = p.guild_id AND l.user_id = p.user_id "
+            "WHERE p.guild_id = ? AND p.reputation > 0 "
+            "ORDER BY p.reputation DESC, messages DESC LIMIT 100",
             (ctx.guild.id,),
-        )
-        lines = [
-            f"**{index}.** <@{row['user_id']}> — **{row['reputation']}**"
-            for index, row in enumerate(rows, start=1)
-        ]
+        ):
+            position += 1
+            medal = {1: "🥇", 2: "🥈", 3: "🥉"}.get(position, f"`{position:>3}`")
+            lines.append(
+                f"{medal} <@{row['user_id']}> — **{int(row['reputation']):,}** rep "
+                f"({int(row['messages']):,} msgs)"
+            )
+
         pages = paginate_lines(
             lines,
-            title="Reputation leaderboard",
-            per_page=15,
+            title=f"Reputation leaderboard — {ctx.guild.name}",
+            per_page=10,
+            colour=COLOUR_INFO,
+            description="Top 100 by reputation. Ties break on message count.",
             empty_message="Nobody has reputation yet.",
         )
         await Paginator(pages, ctx.author).start(ctx)

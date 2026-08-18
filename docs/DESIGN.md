@@ -433,7 +433,8 @@ not is VPN/proxy/Tor detection, recorded as NOT BUILT in §13 decision 7.
 Delivered beyond the sheet: `cogs/owner.py` (7 operator commands — reload, sync,
 shutdown, bot-wide blacklist, guilds, dbstats, commandcount), plus three small
 prefix-only additions where a command's argument shape forced a split
-(`?ecofield`, `?reptop`, `?importsections`). **239 commands total**, across 14
+(`?ecofield`, `?importsections`), and `/reptop` (reputation leaderboard, hybrid
+so the competition can be checked from a slash command). **239 commands total**, across 14
 cogs and 16 migrations.
 
 ---
